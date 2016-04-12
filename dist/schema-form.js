@@ -275,7 +275,7 @@ angular.module('schemaForm').provider('sfBuilder', ['sfPathProvider', function(s
       var items = args.fieldFrag.querySelector('[schema-form-array-items]');
       if (items) {
         state = angular.copy(args.state);
-        state.keyRedaction = state.keyRedaction || 0;
+        state.keyRedaction = 0;
         state.keyRedaction += args.form.key.length + 1;
 
         // Special case, an array with just one item in it that is not an object.
@@ -655,10 +655,18 @@ angular.module('schemaForm').provider('schemaFormDecorators',
                   // It looks better with dot notation.
                   scope.$on(
                     'schemaForm.error.' + form.key.join('.'),
-                    function(event, error, validationMessage, validity) {
+                    function(event, error, validationMessage, validity, formName) {
+                      // validationMessage and validity are mutually exclusive
+                      formName = validity;
                       if (validationMessage === true || validationMessage === false) {
                         validity = validationMessage;
                         validationMessage = undefined;
+                      }
+
+                      // If we have specified a form name, and this model is not within
+                      // that form, then leave things be.
+                      if(formName != undefined && scope.ngModel.$$parentForm.$name !== formName) {
+                        return;
                       }
 
                       if (scope.ngModel && error) {
@@ -682,6 +690,9 @@ angular.module('schemaForm').provider('schemaFormDecorators',
                         scope.ngModel.$setValidity(error, validity === true);
 
                         if (validity === true) {
+                          // Re-trigger model validator, that model itself would be re-validated
+                          scope.ngModel.$validate();
+
                           // Setting or removing a validity can change the field to believe its valid
                           // but its not. So lets trigger its validation as well.
                           scope.$broadcast('schemaFormValidate');
@@ -1243,6 +1254,7 @@ angular.module('schemaForm').provider('schemaForm',
     if (stripNullType(schema.type) === 'object') {
       var f   = stdFormObj(name, schema, options);
       f.type  = 'fieldset';
+      f.key   = options.path;
       f.items = [];
       options.lookup[sfPathProvider.stringify(options.path)] = f;
 
@@ -1461,7 +1473,7 @@ angular.module('schemaForm').provider('schemaForm',
         if (obj.type === 'checkbox' && angular.isUndefined(obj.schema['default'])) {
           obj.schema['default'] = false;
         }
-        
+
         // Special case: template type with tempplateUrl that's needs to be loaded before rendering
         // TODO: this is not a clean solution. Maybe something cleaner can be made when $ref support
         // is introduced since we need to go async then anyway
@@ -2082,10 +2094,18 @@ angular.module('schemaForm').directive('sfField',
               // It looks better with dot notation.
               scope.$on(
                 'schemaForm.error.' + form.key.join('.'),
-                function(event, error, validationMessage, validity) {
+                function(event, error, validationMessage, validity, formName) {
+                  // validationMessage and validity are mutually exclusive
+                  formName = validity;
                   if (validationMessage === true || validationMessage === false) {
                     validity = validationMessage;
                     validationMessage = undefined;
+                  }
+
+                  // If we have specified a form name, and this model is not within
+                  // that form, then leave things be.
+                  if(formName != undefined && scope.ngModel.$$parentForm.$name !== formName) {
+                    return;
                   }
 
                   if (scope.ngModel && error) {
@@ -2109,6 +2129,9 @@ angular.module('schemaForm').directive('sfField',
                     scope.ngModel.$setValidity(error, validity === true);
 
                     if (validity === true) {
+                      // Re-trigger model validator, that model itself would be re-validated
+                      scope.ngModel.$validate();
+
                       // Setting or removing a validity can change the field to believe its valid
                       // but its not. So lets trigger its validation as well.
                       scope.$broadcast('schemaFormValidate');
@@ -2677,7 +2700,7 @@ angular.module('schemaForm')
         // part of the form or schema is chnaged without it being a new instance.
         scope.$on('schemaFormRedraw', function() {
           var schema = scope.schema;
-          var form   = scope.initialForm || ['*'];
+          var form   = scope.initialForm ? angular.copy(scope.initialForm) : ['*'];
           if (schema) {
             render(schema, form);
           }
